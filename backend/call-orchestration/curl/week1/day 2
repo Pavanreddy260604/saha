@@ -1,0 +1,90 @@
+AY 2 — Calls as First-Class Data Objects
+
+Base URL:
+
+http://localhost:3000/api/calls
+
+1️⃣ Create a call (POST /api/calls)
+📌 Curl
+curl -X POST http://localhost:3000/api/calls \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "+919999999999",
+    "direction": "outbound"
+  }'
+
+✅ Expected response
+{
+  "id": 1,
+  "phone": "+919999999999",
+  "direction": "outbound",
+  "status": "PENDING",
+  "retries": 0,
+  "created_at": "...",
+  "next_action_at": "..."
+}
+
+2️⃣ Fetch all calls (GET /api/calls)
+📌 Curl
+curl http://localhost:3000/api/calls
+
+✅ Expected response
+[
+  {
+    "id": 1,
+    "phone": "+919999999999",
+    "direction": "outbound",
+    "status": "PENDING"
+  }
+]
+
+3️⃣ Update call state (PATCH /api/calls/:id)
+📌 Curl
+curl -X PATCH http://localhost:3000/api/calls/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "IN_PROGRESS"
+  }'
+
+✅ Expected response
+{
+  "id": 1,
+  "status": "IN_PROGRESS"
+}
+
+4️⃣ Complete the call
+curl -X PATCH http://localhost:3000/api/calls/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "COMPLETED",
+    "outcome": "test_completed"
+  }'
+
+✅ Expected response
+{
+  "status": "COMPLETED",
+  "outcome": "test_completed"
+}
+
+❌ Try illegal update (should fail)
+curl -X PATCH http://localhost:3000/api/calls/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "PENDING"
+  }'
+
+✅ Expected
+{
+  "error": "Cannot change status of a completed call"
+}
+
+✅ DAY 2 SUCCESS CRITERIA (checklist)
+
+✔ Create call
+✔ Fetch calls
+✔ Update lifecycle
+✔ Block invalid mutation
+✔ No scheduler
+✔ No AI
+
+👉 If all curls work, Day 2 is DONE.

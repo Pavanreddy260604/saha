@@ -1,0 +1,6 @@
+curl -X POST http://localhost:3000/api/calls/outbound \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "+919876543210",
+    "delay_minutes": 5
+  }'

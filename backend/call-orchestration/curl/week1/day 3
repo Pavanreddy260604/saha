@@ -1,0 +1,41 @@
+DAY 3 — CURL COMMANDS (FINAL)
+1️⃣ Start the server
+node index.js
+
+
+Make sure you see:
+
+PostgreSQL connected
+Call Orchestration Service is running on port 3000
+
+2️⃣ Simulate Inbound Call START
+curl -X POST http://localhost:3000/webhooks/inbound -H "Content-Type: application/json" -d "{\"from\":\"+919876543210\",\"event\":\"call.started\"}"
+
+✅ Expected response
+{
+  "message": "Inbound call started",
+  "call": {
+    "direction": "inbound",
+    "status": "IN_PROGRESS"
+  }
+}
+
+3️⃣ Simulate Inbound Call END
+curl -X POST http://localhost:3000/webhooks/inbound -H "Content-Type: application/json" -d "{\"from\":\"+919876543210\",\"event\":\"call.ended\"}"
+
+✅ Expected response
+{
+  "message": "Inbound call completed",
+  "call": {
+    "status": "COMPLETED",
+    "outcome": "inbound_completed"
+  }
+}
+
+4️⃣ Verify DB state (VERY IMPORTANT)
+curl http://localhost:3000/api/calls
+
+You must see:
+direction: inbound
+status: COMPLETED
+outcome: inbound_completed

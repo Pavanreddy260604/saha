@@ -40,6 +40,31 @@ router.post("/", async (req, res) => {
   }
 });
 
+
+router.post("/:id/trigger", async (req, res) => {
+  const { id } = req.params;
+
+  const call = await query(
+    `SELECT * FROM calls WHERE id = $1`,
+    [id]
+  );
+
+  if (!call.rows.length) {
+    return res.status(404).json({ error: "Call not found" });
+  }
+
+  if (call.rows[0].status !== "PENDING") {
+    return res.status(400).json({
+      error: "Only PENDING calls can be triggered"
+    });
+  }
+
+  const { fakeDial } = await import("../services/fakeDialer.js");
+  await fakeDial(id);
+
+  res.json({ message: "Call triggered" });
+});
+
 /**
  * GET /api/calls
  * Fetch all orchestration records
@@ -100,5 +125,53 @@ router.patch("/:id", async (req, res) => {
     res.status(500).json({ error: "Failed to update call" });
   }
 });
+
+
+
+router.post("/outbound", async (req, res) => {
+  try {
+    const { phone, delay_minutes = 0 } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        error: "phone is required"
+      });
+    }
+
+    const result = await query(
+      `
+      INSERT INTO calls (
+        phone,
+        direction,
+        status,
+        retries,
+        created_at,
+        next_action_at
+      )
+      VALUES (
+        $1,
+        'outbound',
+        'PENDING',
+        0,
+        NOW(),
+        NOW() + ($2 || ' minutes')::interval
+      )
+      RETURNING *
+      `,
+      [phone, delay_minutes]
+    );
+
+    return res.status(201).json({
+      message: "Outbound call scheduled",
+      call: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to create outbound call" });
+  }
+});
+
+
 
 export default router;
