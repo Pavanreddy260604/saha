@@ -1,16 +1,27 @@
 import {query} from "../db.js";
 const SCHEDULER_INTERVAL_MS = 5000;
+let isRunning = false;
 
 const runScheduler = async () =>{
+    if(isRunning){
+         console.log("⏭ Scheduler skipped (already running)");
+         return;
+    }
+    isRunning= true;
+    console.log("Scheduler tick Started.....")
     try{
-        console.log("Scheduler trick.....")
         const result = await query(
             `SELECT id,phone
             FROM calls
             WHERE status = 'PENDING'
             AND next_action_at <= NOW()
+        ORDER BY next_action_at,created_at
             LIMIT 5`
         );
+        if(result.rows.length ===0){
+            console.log("No pending calls to process");
+          
+        }
         for (const call of result.rows){
             const updated = await query(
                 `UPDATE calls
@@ -26,6 +37,10 @@ const runScheduler = async () =>{
     }}catch(err){
         console.error("Error in scheduler:", err);
     }
+    finally {
+    isRunning = false;
+    console.log("✅ Scheduler tick finished");
+  }
 };
 export const startScheduler = () =>{
     setInterval(runScheduler, SCHEDULER_INTERVAL_MS);

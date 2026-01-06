@@ -1,11 +1,10 @@
 import express from 'express';
 import callsRouter from "./routes/calls.js";
 import webhookRouter from "./routes/webhooks.js";
-import {startScheduler} from "./workers/scheduler.js"
 import providerEventsRouter from "./routes/providerEvents.js"
 const app = express();
 app.use(express.json());
-startScheduler();
+
 
 app.use("/api/calls",callsRouter)
 app.use("/webhooks",webhookRouter)
