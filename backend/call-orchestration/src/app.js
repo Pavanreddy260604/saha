@@ -6,10 +6,10 @@ const app = express();
 app.use(express.json());
 
 
-app.use("/api/calls",callsRouter)
-app.use("/webhooks",webhookRouter)
-app.use("/webhooks", providerEventsRouter);
-app.get("/health",(req, res)=>{
-    res.json({status:"ok"});
+app.use("/api/calls", callsRouter)
+app.use("/webhooks", webhookRouter)
+app.use("/provider", providerEventsRouter);
+app.get("/health", (req, res) => {
+    res.json({ status: "ok" });
 });
 export default app;

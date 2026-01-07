@@ -20,7 +20,7 @@ router.post("/inbound", async (req, res) => {
           phone,
           direction,
           status,
-          retries,
+          retry_count,
           created_at,
           next_action_at
         )

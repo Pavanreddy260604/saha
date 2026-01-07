@@ -1,17 +1,22 @@
 import { query } from "../db.js";
 
 export const fakeDial = async (callId) => {
-  console.log(`📞 Dialing call ${callId} (FAKE)`);
+  console.log(`📞  Executing call ${callId} (FAKE)`);
 
-  await query(
+  const result = await query(
     `
     UPDATE calls
     SET status = 'IN_PROGRESS'
     WHERE id = $1
-      AND status = 'PENDING'
+      AND status = 'CLAIMED'
     `,
     [callId]
   );
+  if (result.rowCount === 0) {
+    console.log(`⏭ Call ${callId} not claimable for execution`);
+    return;
+  }
+
 
   console.log(`✅ Call ${callId} marked IN_PROGRESS`);
 };

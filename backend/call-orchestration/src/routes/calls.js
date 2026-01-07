@@ -5,7 +5,7 @@ const router = express.Router();
 
 /**
  * POST /api/calls
- * Create orchestration record
+ * Create generic call (inbound / outbound)
  */
 router.post("/", async (req, res) => {
   try {
@@ -23,51 +23,74 @@ router.post("/", async (req, res) => {
         phone,
         direction,
         status,
-        retries,
+        retry_count,
+        max_retries,
+        retry_delay_minutes,
         created_at,
         next_action_at
       )
-      VALUES ($1, $2, 'PENDING', 0, NOW(), NOW())
+      VALUES (
+        $1,
+        $2,
+        'PENDING',
+        0,
+        1,
+        5,
+        NOW(),
+        NOW()
+      )
       RETURNING *
       `,
       [phone, direction]
     );
 
     res.status(201).json(result.rows[0]);
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create call" });
   }
 });
 
-
+/**
+ * POST /api/calls/:id/trigger
+ * Manual execution trigger (atomic)
+ */
 router.post("/:id/trigger", async (req, res) => {
-  const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-  const call = await query(
-    `SELECT * FROM calls WHERE id = $1`,
-    [id]
-  );
+    const updated = await query(
+      `
+      UPDATE calls
+      SET status = 'CLAIMED'
+      WHERE id = $1
+        AND status = 'PENDING'
+      RETURNING *
+      `,
+      [id]
+    );
 
-  if (!call.rows.length) {
-    return res.status(404).json({ error: "Call not found" });
+    if (updated.rows.length === 0) {
+      return res.status(400).json({
+        error: "Call not triggerable"
+      });
+    }
+
+    const { fakeDial } = await import("../services/fakeDialer.js");
+    await fakeDial(id);
+
+    res.json({ message: "Call triggered", call: updated.rows[0] });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Trigger failed" });
   }
-
-  if (call.rows[0].status !== "PENDING") {
-    return res.status(400).json({
-      error: "Only PENDING calls can be triggered"
-    });
-  }
-
-  const { fakeDial } = await import("../services/fakeDialer.js");
-  await fakeDial(id);
-
-  res.json({ message: "Call triggered" });
 });
 
 /**
  * GET /api/calls
- * Fetch all orchestration records
+ * Fetch all calls
  */
 router.get("/", async (_req, res) => {
   try {
@@ -82,7 +105,7 @@ router.get("/", async (_req, res) => {
 
 /**
  * PATCH /api/calls/:id
- * Mutate orchestration state
+ * Admin / dev override
  */
 router.patch("/:id", async (req, res) => {
   try {
@@ -94,16 +117,16 @@ router.patch("/:id", async (req, res) => {
       [id]
     );
 
-    if (existing.rows.length === 0) {
+    if (!existing.rows.length) {
       return res.status(404).json({ error: "Call not found" });
     }
 
     const call = existing.rows[0];
 
-    // ❗ Final state protection
-    if (call.status === "COMPLETED") {
+    // terminal protection
+    if (["COMPLETED", "FAILED"].includes(call.status)) {
       return res.status(400).json({
-        error: "Completed calls cannot be modified"
+        error: "Terminal calls cannot be modified"
       });
     }
 
@@ -121,13 +144,17 @@ router.patch("/:id", async (req, res) => {
     );
 
     res.json(result.rows[0]);
+
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Failed to update call" });
   }
 });
 
-
-
+/**
+ * POST /api/calls/outbound
+ * Create delayed outbound call
+ */
 router.post("/outbound", async (req, res) => {
   try {
     const { phone, delay_minutes = 0 } = req.body;
@@ -144,7 +171,9 @@ router.post("/outbound", async (req, res) => {
         phone,
         direction,
         status,
-        retries,
+        retry_count,
+        max_retries,
+        retry_delay_minutes,
         created_at,
         next_action_at
       )
@@ -153,6 +182,8 @@ router.post("/outbound", async (req, res) => {
         'outbound',
         'PENDING',
         0,
+        1,
+        5,
         NOW(),
         NOW() + ($2 || ' minutes')::interval
       )
@@ -161,7 +192,7 @@ router.post("/outbound", async (req, res) => {
       [phone, delay_minutes]
     );
 
-    return res.status(201).json({
+    res.status(201).json({
       message: "Outbound call scheduled",
       call: result.rows[0]
     });
@@ -171,7 +202,5 @@ router.post("/outbound", async (req, res) => {
     res.status(500).json({ error: "Failed to create outbound call" });
   }
 });
-
-
 
 export default router;
