@@ -1,5 +1,6 @@
 import express from "express";
 import { query } from "../db.js";
+import {resolveRules} from "../rules/resolveRules.js"
 
 const router = express.Router();
 
@@ -9,19 +10,21 @@ const router = express.Router();
  */
 router.post("/", async (req, res) => {
   try {
-    const { phone, direction } = req.body;
+    const { phone, direction , bot_type = "default" } = req.body;
 
     if (!phone || !direction) {
       return res.status(400).json({
         error: "phone and direction are required"
       });
     }
+     const rules = resolveRules(bot_type);
 
     const result = await query(
       `
       INSERT INTO calls (
         phone,
         direction,
+        bot_type,
         status,
         retry_count,
         max_retries,
@@ -30,25 +33,27 @@ router.post("/", async (req, res) => {
         next_action_at
       )
       VALUES (
-        $1,
-        $2,
-        'PENDING',
-        0,
-        1,
-        5,
-        NOW(),
-        NOW()
-      )
+  $1,
+  $2,
+  $3,
+  'PENDING',
+  0,
+  $4,
+  $5,
+  NOW(),
+  NOW()
+)
+
       RETURNING *
       `,
-      [phone, direction]
+      [phone, direction,bot_type,rules.max_retries,rules.retry_delay_minutes]
     );
 
     res.status(201).json(result.rows[0]);
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to create call" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -92,7 +97,7 @@ router.post("/:id/trigger", async (req, res) => {
  * GET /api/calls
  * Fetch all calls
  */
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
     const result = await query(
       `SELECT * FROM calls ORDER BY created_at DESC`
@@ -157,7 +162,7 @@ router.patch("/:id", async (req, res) => {
  */
 router.post("/outbound", async (req, res) => {
   try {
-    const { phone, delay_minutes = 0 } = req.body;
+    const { phone, delay_minutes = 0, bot_type = "default" } = req.body;
 
     if (!phone) {
       return res.status(400).json({
@@ -165,11 +170,15 @@ router.post("/outbound", async (req, res) => {
       });
     }
 
+    // 🔥 APPLY RULES HERE
+    const rules = resolveRules(bot_type);
+
     const result = await query(
       `
       INSERT INTO calls (
         phone,
         direction,
+        bot_type,
         status,
         retry_count,
         max_retries,
@@ -180,16 +189,23 @@ router.post("/outbound", async (req, res) => {
       VALUES (
         $1,
         'outbound',
+        $2,
         'PENDING',
         0,
-        1,
-        5,
+        $3,
+        $4,
         NOW(),
-        NOW() + ($2 || ' minutes')::interval
+        NOW() + ($5 || ' minutes')::interval
       )
       RETURNING *
       `,
-      [phone, delay_minutes]
+      [
+        phone,
+        bot_type,
+        rules.max_retries,
+        rules.retry_delay_minutes,
+        delay_minutes
+      ]
     );
 
     res.status(201).json({
@@ -199,8 +215,9 @@ router.post("/outbound", async (req, res) => {
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to create outbound call" });
+    res.status(500).json({ error: err.message });
   }
 });
+
 
 export default router;
