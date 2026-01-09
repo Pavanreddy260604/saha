@@ -3,17 +3,29 @@ import { query } from "../db.js";
 
 const router = express.Router();
 
+/**
+ * POST /provider-event
+ * Exotel provider webhook
+ */
 router.post("/provider-event", async (req, res) => {
   try {
-    const { call_id, event } = req.body;
+    const { provider, provider_call_id, event } = req.body;
 
-    if (!call_id || !event) {
-      return res.status(400).json({ error: "call_id and event are required" });
+    if (!provider || !provider_call_id || !event) {
+      return res.status(400).json({
+        error: "provider, provider_call_id and event are required"
+      });
     }
 
+    // 🔎 Find call via provider identity
     const result = await query(
-      `SELECT * FROM calls WHERE id = $1`,
-      [call_id]
+      `
+      SELECT *
+      FROM calls
+      WHERE provider = $1
+        AND provider_call_id = $2
+      `,
+      [provider, provider_call_id]
     );
 
     if (!result.rows.length) {
@@ -22,81 +34,82 @@ router.post("/provider-event", async (req, res) => {
 
     const call = result.rows[0];
 
-    // ✅ Full terminal protection
+    // 🔒 Terminal protection
     if (["COMPLETED", "FAILED"].includes(call.status)) {
-      return res.status(400).json({ error: "Call is in terminal state" });
+      return res.json({ message: "Ignored terminal event" });
     }
 
-    // ANSWERED → IN_PROGRESS
-    if (event === "answered") {
-      const updated = await query(
-        `
-        UPDATE calls
-        SET status = 'IN_PROGRESS'
-        WHERE id = $1
-        RETURNING *
-        `,
-        [call_id]
-      );
-      return res.json(updated.rows[0]);
-    }
+    // 🔁 Normalize provider events → internal state
 
-    // COMPLETED → SUCCESS
-    if (event === "completed") {
-      const updated = await query(
-        `
-        UPDATE calls
-        SET status = 'COMPLETED',
-            outcome = 'completed'
-        WHERE id = $1
-        RETURNING *
-        `,
-        [call_id]
-      );
-      return res.json(updated.rows[0]);
-    }
+    switch (event) {
+      case "answered":
+        if (call.status !== "IN_PROGRESS") {
+          await query(
+            `
+            UPDATE calls
+            SET status = 'IN_PROGRESS'
+            WHERE id = $1
+            `,
+            [call.id]
+          );
+        }
+        break;
 
-    // NO ANSWER → RETRY / FAIL
-    if (event === "no_answer") {
-      if (call.retry_count < call.max_retries) {
-        const updated = await query(
+      case "completed":
+        await query(
           `
           UPDATE calls
-          SET retry_count = retry_count + 1,
-              status = 'PENDING',
-              next_action_at = NOW()
-                + (retry_delay_minutes || ' minutes')::interval
+          SET status = 'COMPLETED',
+              outcome = 'completed'
           WHERE id = $1
-          RETURNING *
           `,
-          [call_id]
+          [call.id]
         );
+        break;
 
-        return res.json({
-          message: "No answer, retry scheduled",
-          call: updated.rows[0]
-        });
-      }
+      case "no_answer":
+        if (call.retry_count < call.max_retries) {
+          await query(
+            `
+            UPDATE calls
+            SET retry_count = retry_count + 1,
+                status = 'PENDING',
+                next_action_at =
+                  NOW() + (retry_delay_minutes || ' minutes')::interval
+            WHERE id = $1
+            `,
+            [call.id]
+          );
+        } else {
+          await query(
+            `
+            UPDATE calls
+            SET status = 'FAILED',
+                outcome = 'retry_exhausted'
+            WHERE id = $1
+            `,
+            [call.id]
+          );
+        }
+        break;
 
-      // ✅ Retry exhausted → FAILED
-      const failed = await query(
-        `
-        UPDATE calls
-        SET status = 'FAILED',
-            outcome = 'retry_exhausted'
-        WHERE id = $1
-        RETURNING *
-        `,
-        [call_id]
-      );
+      case "failed":
+        await query(
+          `
+          UPDATE calls
+          SET status = 'FAILED',
+              outcome = 'provider_failed'
+          WHERE id = $1
+          `,
+          [call.id]
+        );
+        break;
 
-      return res.json({
-        message: "Retry exhausted, call failed",
-        call: failed.rows[0]
-      });
+      default:
+        return res.status(400).json({ error: "Unknown event type" });
     }
 
-    return res.status(400).json({ error: "Unknown event type" });
+    res.json({ message: "Event processed" });
 
   } catch (err) {
     console.error("Provider event error:", err);

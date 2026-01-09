@@ -1,5 +1,5 @@
 import { query } from "../db.js";
-import { fakeDial } from "../services/fakeDialer.js";
+import { dialViaExotel } from "../services/exotelDialer.js";
 
 const SCHEDULER_INTERVAL_MS = 5000;
 let isRunning = false;
@@ -14,10 +14,9 @@ const runScheduler = async () => {
   console.log("⏰ Scheduler tick started");
 
   try {
-    // 1️⃣ Select only ELIGIBLE pending calls
     const result = await query(
       `
-      SELECT id
+      SELECT *
       FROM calls
       WHERE status = 'PENDING'
         AND next_action_at <= NOW()
@@ -31,32 +30,43 @@ const runScheduler = async () => {
       return;
     }
 
-    // 2️⃣ Process each call independently
-    for (const row of result.rows) {
-      const callId = row.id;
-
-      // 3️⃣ ATOMIC CLAIM
+    for (const call of result.rows) {
       const claimResult = await query(
         `
         UPDATE calls
         SET status = 'CLAIMED'
         WHERE id = $1
           AND status = 'PENDING'
-        RETURNING id
+        RETURNING *
         `,
-        [callId]
+        [call.id]
       );
 
-      // ❗ CRITICAL FIX: Only proceed if claim succeeded
       if (claimResult.rows.length === 0) {
-        console.log(`⏭ Call ${callId} already claimed, skipping`);
         continue;
       }
 
-      console.log(`📞 Call ${callId} successfully CLAIMED`);
+      const claimedCall = claimResult.rows[0];
+      console.log(`📞 Call ${claimedCall.id} CLAIMED`);
 
-      // 4️⃣ Execute call
-      await fakeDial(callId);
+      try {
+        // 🔥 Attempt real provider call
+        await dialViaExotel(claimedCall);
+
+      } catch (err) {
+        console.error(`❌ Dial failed for call ${claimedCall.id}`, err.message);
+
+        // 🔁 CRITICAL: release call back to scheduler
+        await query(
+          `
+          UPDATE calls
+          SET status = 'PENDING',
+              next_action_at = NOW() + INTERVAL '1 minute'
+          WHERE id = $1
+          `,
+          [claimedCall.id]
+        );
+      }
     }
 
   } catch (err) {
@@ -67,7 +77,6 @@ const runScheduler = async () => {
   }
 };
 
-// Entry point
 export const startScheduler = () => {
   console.log("⏰ Scheduler process started");
   setInterval(runScheduler, SCHEDULER_INTERVAL_MS);
