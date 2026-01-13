@@ -31,7 +31,8 @@ router.post("/", async (req, res) => {
         max_retries,
         retry_delay_minutes,
         next_action_at,
-        created_at
+        created_at,
+        provider
       )
       VALUES (
         $1,
@@ -42,7 +43,8 @@ router.post("/", async (req, res) => {
         $4,
         $5,
         NOW(),
-        NOW()
+        NOW(),
+        $6
       )
       RETURNING *
       `,
@@ -51,7 +53,8 @@ router.post("/", async (req, res) => {
         direction,
         bot_type,
         rules.max_retries,
-        rules.retry_delay_minutes
+        rules.retry_delay_minutes,
+        req.body.provider || 'fake'
       ]
     );
 
@@ -73,7 +76,8 @@ router.post("/:id/trigger", async (req, res) => {
     const updated = await query(
       `
       UPDATE calls
-      SET next_action_at = NOW()
+      SET next_action_at = NOW(),
+          claimed_at = NULL
       WHERE id = $1
         AND status = 'PENDING'
       RETURNING *
@@ -138,7 +142,8 @@ router.patch("/:id", async (req, res) => {
     SET
       status = COALESCE($2, status),
       outcome = COALESCE($3, outcome),
-      next_action_at = COALESCE($4, next_action_at)
+      next_action_at = COALESCE($4, next_action_at),
+      claimed_at = (CASE WHEN COALESCE($2, status) = 'PENDING' THEN NULL ELSE claimed_at END)
     WHERE id = $1
     RETURNING *
     `,
@@ -171,7 +176,8 @@ router.post("/outbound", async (req, res) => {
       max_retries,
       retry_delay_minutes,
       next_action_at,
-      created_at
+      created_at,
+      provider
     )
     VALUES (
       $1,
@@ -181,8 +187,9 @@ router.post("/outbound", async (req, res) => {
       0,
       $3,
       $4,
-      NOW() + ($5 || ' minutes')::interval,
-      NOW()
+      NOW() + ($5 * interval '1 minute'),
+      NOW(),
+      $6
     )
     RETURNING *
     `,
@@ -191,7 +198,8 @@ router.post("/outbound", async (req, res) => {
       bot_type,
       rules.max_retries,
       rules.retry_delay_minutes,
-      delay_minutes
+      delay_minutes,
+      req.body.provider || 'fake'
     ]
   );
 

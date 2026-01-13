@@ -1,5 +1,6 @@
 import express from "express";
 import { query } from "../db.js";
+import { applyRetryPolicy } from "../utils/retryPolicy.js";
 
 const router = express.Router();
 
@@ -68,29 +69,8 @@ router.post("/provider-event", async (req, res) => {
         break;
 
       case "no_answer":
-        if (call.retry_count < call.max_retries) {
-          await query(
-            `
-            UPDATE calls
-            SET retry_count = retry_count + 1,
-                status = 'PENDING',
-                next_action_at =
-                  NOW() + (retry_delay_minutes || ' minutes')::interval
-            WHERE id = $1
-            `,
-            [call.id]
-          );
-        } else {
-          await query(
-            `
-            UPDATE calls
-            SET status = 'FAILED',
-                outcome = 'retry_exhausted'
-            WHERE id = $1
-            `,
-            [call.id]
-          );
-        }
+        // 🛡 Apply centralized retry policy
+        await applyRetryPolicy(call.id, 'no_answer');
         break;
 
       case "failed":

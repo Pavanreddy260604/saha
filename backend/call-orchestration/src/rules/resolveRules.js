@@ -1,9 +1,9 @@
-import {BOT_RULES} from "./botRules.js";
-export const resolveRules = (botType) =>{
+import { BOT_RULES } from "./botRules.js";
+export const resolveRules = (botType) => {
     const rules = BOT_RULES[botType];
 
-if(!rules){
-    throw new ERROR(`no rules defined for botType: ${botType}`)
-}
-return rules;
+    if (!rules) {
+        throw new Error(`no rules defined for botType: ${botType}`)
+    }
+    return rules;
 };

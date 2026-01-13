@@ -50,6 +50,7 @@ export const dialViaExotel = async (call) => {
     });
   } catch (err) {
     // Provider call itself failed (network/auth/etc.)
+    console.error("Exotel Error Details:", err.response?.data || err.message);
     throw new Error(`Exotel dial failed: ${err.message}`);
   }
 

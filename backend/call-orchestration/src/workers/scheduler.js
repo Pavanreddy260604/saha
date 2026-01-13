@@ -1,5 +1,8 @@
 import { query } from "../db.js";
-import { dialViaExotel } from "../services/exotelDialer.js";
+import { dial } from "../services/dialer.js";
+import { applyRetryPolicy } from "../utils/retryPolicy.js";
+
+import { recoverStuckClaims } from "./recoverStuckClaims.js";
 
 const SCHEDULER_INTERVAL_MS = 5000;
 let isRunning = false;
@@ -14,6 +17,9 @@ const runScheduler = async () => {
   console.log("⏰ Scheduler tick started");
 
   try {
+    // 🛡 Recover stuck claims first
+    await recoverStuckClaims();
+
     const result = await query(
       `
       SELECT *
@@ -33,11 +39,13 @@ const runScheduler = async () => {
     for (const call of result.rows) {
       const claimResult = await query(
         `
-        UPDATE calls
-        SET status = 'CLAIMED'
-        WHERE id = $1
-          AND status = 'PENDING'
-        RETURNING *
+       UPDATE calls
+SET status = 'CLAIMED',
+    claimed_at = NOW()
+WHERE id = $1
+  AND status = 'PENDING'
+RETURNING *
+
         `,
         [call.id]
       );
@@ -50,22 +58,19 @@ const runScheduler = async () => {
       console.log(`📞 Call ${claimedCall.id} CLAIMED`);
 
       try {
-        // 🔥 Attempt real provider call
-        await dialViaExotel(claimedCall);
+        // 🔥 Attempt provider call via dispatcher
+        await dial(claimedCall);
 
       } catch (err) {
         console.error(`❌ Dial failed for call ${claimedCall.id}`, err.message);
 
-        // 🔁 CRITICAL: release call back to scheduler
-        await query(
-          `
-          UPDATE calls
-          SET status = 'PENDING',
-              next_action_at = NOW() + INTERVAL '1 minute'
-          WHERE id = $1
-          `,
-          [claimedCall.id]
-        );
+        // 🛡 Apply centralized retry policy
+        const { retried, failed } = await applyRetryPolicy(claimedCall.id, 'dial_failed');
+        if (retried) {
+          console.log(`🔁 Call ${claimedCall.id} scheduled for retry`);
+        } else if (failed) {
+          console.log(`💀 Call ${claimedCall.id} marked FAILED (dial_failed)`);
+        }
       }
     }
 
