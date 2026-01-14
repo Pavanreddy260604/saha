@@ -3,7 +3,15 @@ name: Backend Tests
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'backend/call-orchestration/**'
   pull_request:
+    paths:
+      - 'backend/call-orchestration/**'
+
+defaults:
+  run:
+    working-directory: backend/call-orchestration
 
 jobs:
   test:
@@ -60,4 +68,5 @@ jobs:
 
       # Run tests
       - run: npm test
+
 
