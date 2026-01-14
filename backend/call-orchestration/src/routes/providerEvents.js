@@ -1,6 +1,6 @@
 import express from "express";
 import { query } from "../db.js";
-import { applyRetryPolicy } from "../utils/retryPolicy.js";
+import { applyRetryPolicy } from "../rules/utils/retryPolicy.js";
 
 const router = express.Router();
 

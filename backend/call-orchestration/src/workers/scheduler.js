@@ -1,6 +1,6 @@
 import { query } from "../db.js";
 import { dial } from "../services/dialer.js";
-import { applyRetryPolicy } from "../utils/retryPolicy.js";
+import { applyRetryPolicy } from "../rules/utils/retryPolicy.js";
 
 import { recoverStuckClaims } from "./recoverStuckClaims.js";
 

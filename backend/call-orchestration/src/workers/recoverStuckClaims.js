@@ -1,5 +1,5 @@
 import { query } from "../db.js";
-import { applyRetryPolicy } from "../utils/retryPolicy.js";
+import { applyRetryPolicy } from "../rules/utils/retryPolicy.js";
 
 export const recoverStuckClaims = async () => {
     const { rows: stuckCalls } = await query(`

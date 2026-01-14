@@ -1,4 +1,4 @@
-import { query } from "../db.js";
+import { query } from "../../db.js ";
 
 /**
  * Applies retry policy to a call.

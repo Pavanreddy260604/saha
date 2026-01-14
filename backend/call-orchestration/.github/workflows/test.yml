@@ -1,0 +1,63 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/testdb
+      PORT: 3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      # Run database schema
+      - name: Setup database schema
+        run: psql $DATABASE_URL -f schema.sql
+
+      # Start server in background
+      - name: Start server
+        run: node index.js &
+
+      # Start scheduler in background
+      - name: Start scheduler
+        run: node schedule.js &
+      
+      # Wait for server to be ready
+      - name: Wait for server
+        run: |
+          for i in {1..30}; do
+            curl -s http://localhost:3000/health && break
+            echo "Waiting for server..."
+            sleep 1
+          done
+
+      # Run tests
+      - run: npm test
+
