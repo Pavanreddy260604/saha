@@ -10,7 +10,7 @@
     "testEnvironment": "node",
     "transform": {},
     "testMatch": [
-      "**/src/tests/**/*.js"
+      "**/src/tests/**/*.test.js"
     ]
   },
   "keywords": [],

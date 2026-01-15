@@ -1,4 +1,4 @@
-import { query } from "../../db.js ";
+import { query } from "../../db.js";
 
 /**
  * Applies retry policy to a call.
@@ -8,7 +8,7 @@ import { query } from "../../db.js ";
  * @returns {Promise<{retried: boolean, failed: boolean, call: object|null}>}
  */
 export const applyRetryPolicy = async (callId, failureReason = 'retry_exhausted') => {
-    // 🛡 Atomic Update: Increment retry ONLY if under limit
+    // 🛡 Atomic Update: Increment retry ONLY if under limit AND not in terminal state
     const retryResult = await query(
         `
     UPDATE calls
@@ -18,6 +18,7 @@ export const applyRetryPolicy = async (callId, failureReason = 'retry_exhausted'
         claimed_at = NULL
     WHERE id = $1
       AND retry_count < max_retries
+      AND status NOT IN ('COMPLETED', 'FAILED')
     RETURNING *
     `,
         [callId]
@@ -25,6 +26,16 @@ export const applyRetryPolicy = async (callId, failureReason = 'retry_exhausted'
 
     if (retryResult.rowCount > 0) {
         return { retried: true, failed: false, call: retryResult.rows[0] };
+    }
+
+    // Check if already in terminal state - don't modify
+    const existingResult = await query(
+        `SELECT status FROM calls WHERE id = $1`,
+        [callId]
+    );
+
+    if (existingResult.rows[0]?.status === 'COMPLETED' || existingResult.rows[0]?.status === 'FAILED') {
+        return { retried: false, failed: false, call: null }; // Already terminal, no action taken
     }
 
     // Retries exhausted -> Mark as FAILED
